@@ -4,7 +4,11 @@
  * 3. Play/ pause/ seek
  * 4. CD rotate
  * 5. Next/ prev
- * 6. Random
+ * 6. Random:
+ *  Mục tiêu: Lần lượt suffle sao cho ko trùng vô bài hát của mảng đã phát
+    6.1. Mỗi lần play 1 bài đưa object song {} vào mảng called shuffleSongs[]
+    6.2. So sánh name của shuffleSongs[] & name của songs[]. Nếu same name thì phải render newIndex
+    6.3. Khi phát hết thì clear mảng shuffleSongs[] & repeat để hạn chế tối đa việc mix ngẫu nhiên mà bị lặp lại bài hát
  * 7. Next/ Repeat again
  * 8. Active song
  * 9. Scroll active song into view
@@ -33,12 +37,6 @@ const app = {
     isRepeat: false,
     songs: [
         {
-            name: 'Đậm Đà',
-            singer: 'Tóc Tiên',
-            path: './assets/music/dam-da.mp3',
-            image: './assets/img/dam-da.jpeg',
-        },
-        {
             name: 'Cầu Duyên',
             singer: 'Chị Đẹp',
             path: './assets/music/cau-duyen.mp3',
@@ -55,6 +53,12 @@ const app = {
             singer: 'Phan Mạnh Quỳnh',
             path: './assets/music/co-chang-trai-viet-len-cay.mp3',
             image: './assets/img/co-chang-trai-viet-len-cay.jpeg',
+        },
+        {
+            name: 'Đậm Đà',
+            singer: 'Tóc Tiên',
+            path: './assets/music/dam-da.mp3',
+            image: './assets/img/dam-da.jpeg',
         },
         {
             name: 'Đưa Em Về Nhà',
@@ -93,7 +97,7 @@ const app = {
             image: './assets/img/vi-nha.jpeg',
         },
     ],
-    render: function () {
+    render() {
         const html = this.songs.map((song, index) => {
             return `
             <div class="song ${
@@ -117,24 +121,25 @@ const app = {
         });
         playList.innerHTML = html.join('');
     },
-    defineProperties: function () {
+    defineProperties() {
         Object.defineProperty(this, 'currentSong', {
-            get: function () {
+            get() {
                 return this.songs[this.currentIndex];
             },
         });
     },
-    handleEvents: function () {
-        const cdWidth = cd.offsetWidth;
-
-        // CD Animation
+    defineCdAnimation() {
         const cdAnimation = cdThumb.animate([{ transform: 'rotate(360deg)' }], {
             duration: 10000,
             iterations: Infinity,
         });
-
         // Start with the CD animation paused
         cdAnimation.pause();
+        return cdAnimation;
+    },
+    handleEvents() {
+        const cdWidth = cd.offsetWidth;
+        const cdThumbAnimation = this.defineCdAnimation();
 
         // Handle zoom in/out song's thumbnail
         document.onscroll = () => {
@@ -151,18 +156,18 @@ const app = {
             this.isPlaying ? audio.pause() : audio.play();
         };
 
-        // Audio tag listens when song is PLAYED
+        // Audio tag listens event when song is PLAYED
         audio.onplay = () => {
             this.isPlaying = true;
             player.classList.add('playing');
-            cdAnimation.play();
+            cdThumbAnimation.play();
         };
 
-        //  Audio tag listens when song is PAUSED
+        //  Audio tag listens event when song is PAUSED
         audio.onpause = () => {
             this.isPlaying = false;
             player.classList.remove('playing');
-            cdAnimation.pause();
+            cdThumbAnimation.pause();
         };
 
         // Display the current position of the song on the progress bar in percentage
@@ -177,8 +182,8 @@ const app = {
 
         // Handle rewind/fast forward when adjusting the progress bar
         progressBar.oninput = () => {
-            const newTime = (progressBar.value / 100) * audio.duration;
-            audio.currentTime = newTime;
+            const seekTime = (progressBar.value / 100) * audio.duration;
+            audio.currentTime = seekTime;
         };
 
         // Event for NEXT button
@@ -193,7 +198,6 @@ const app = {
             audio.play();
         };
 
-        // Handle on/off for RANDOM button
         randomBtn.onclick = () => {
             this.isRandom = !this.isRandom;
             randomBtn.classList.toggle('active', this.isRandom);
@@ -230,13 +234,13 @@ const app = {
         };
     },
 
-    loadCurrentSong: function () {
+    loadCurrentSong() {
         heading.textContent = this.currentSong.name;
         cdThumb.style.backgroundImage = `url("${this.currentSong.image}")`;
         audio.src = this.currentSong.path;
     },
 
-    playNextSong: function () {
+    playNextSong() {
         this.currentIndex++;
         if (this.currentIndex >= this.songs.length) {
             this.currentIndex = 0;
@@ -247,7 +251,7 @@ const app = {
         this.scrollToActiveSong();
     },
 
-    playPreviousSong: function () {
+    playPreviousSong() {
         this.currentIndex--;
         if (this.currentIndex < 0) {
             this.currentIndex = this.songs.length - 1;
@@ -256,19 +260,42 @@ const app = {
         this.render();
         this.scrollToActiveSong();
     },
+    // Handle on/off for RANDOM button
 
-    playRandomSong: function () {
+    shuffleSongs: [],
+    playRandomSong() {
+        // If all songs have been played, clear the shuffleSongs[]
+        if (this.shuffleSongs.length >= this.songs.length) {
+            this.shuffleSongs = [];
+        }
+
         let newIndex;
+        let isDuplicate;
+
+        // Loop until we find a song that is not the current one and hasn't been played yet.
         do {
             newIndex = Math.floor(Math.random() * this.songs.length);
-        } while (newIndex === this.currentIndex);
+            // check song title in shuffleSongs[] === song title in songs[]
+            // if true -> it has already been played
+            isDuplicate = this.shuffleSongs.some(
+                (song) => song.name === this.songs[newIndex].name
+            );
+        } while (newIndex === this.currentIndex || isDuplicate);
+
         this.currentIndex = newIndex;
+
+        // Record the song as played by adding it to the shuffleSongs[] and use that [] to check duplicate in the future.
+        this.shuffleSongs.push(this.songs[newIndex]);
+
         this.loadCurrentSong();
         this.render();
         this.scrollToActiveSong();
+
+        // console.log(this.shuffleSongs);
+        // console.log(this.songs[newIndex]);
     },
 
-    scrollToActiveSong: function () {
+    scrollToActiveSong() {
         setTimeout(() => {
             $('.song.active').scrollIntoView({
                 behavior: 'smooth',
@@ -277,7 +304,7 @@ const app = {
         }, 200);
     },
 
-    start: function () {
+    start() {
         // Define properties for object
         this.defineProperties();
 
@@ -293,36 +320,3 @@ const app = {
 };
 
 app.start();
-
-/**
- * Play from index 0
-
-index++ = 1
-1 >= 7 false
-loadsongAtIndex 1
-
-index++ = 2
-2 >= 7 false
-loadsongAtIndex 2
-
-index++ = 3
-3 >= 7 false
-loadsongAtIndex 3
-
-index++ = 4
-4 >= 7 false
-loadsongAtIndex 4
-
-index++ = 5
-5 >= 7 false
-loadsongAtIndex 5
-
-index++ = 6
-6 >= 7 false
-loadsongAtIndex 6
-
-index++ = 7
-7 >= 7 true
-reset index = 0
-loadsongAtIndex
- */
